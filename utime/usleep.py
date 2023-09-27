@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConvBlock(nn.Sequential):
-    """Building block for UTime architecture. Comprised of Convolution, Batch norm, and activation."""
+    """Building block for USleep architecture. Comprised of Convolution, Batch norm, and activation."""
 
     def __init__(
         self,
@@ -46,7 +46,7 @@ class ConvBlock(nn.Sequential):
 
 
 class EncoderBlock(nn.Module):
-    """Block for encoder path in UTime architecture.
+    """Block for encoder path in USleep architecture.
 
     Comprised of 2 `ConvBlock`s and a `MaxPool` layer. Returns a residual in addition to the block
     output, which is the output before the max pool is applied.
@@ -107,7 +107,7 @@ class EncoderBlock(nn.Module):
 
 
 class DecoderBlock(nn.Module):
-    """Block for decoder path in UTime architecture.
+    """Block for decoder path in USleep architecture.
 
     Comprised of a nearest-neighbour upsampler and 3 `ConvBlock`s. The input is upsampled and passed
     through a`ConvBlock` before the residual for the adjacent `EncoderBlock` is cropped and
@@ -189,8 +189,8 @@ class DecoderBlock(nn.Module):
         return x[:, :, :target_len], res[:, :, :target_len]
 
 
-class UTimeBackbone(nn.Module):
-    """Backbone for the UTime architecture.
+class USleepBackbone(nn.Module):
+    """Backbone for the USleep architecture.
 
     Comprised of 4 `EncoderBlock`s, a bottleneck (another `EncoderBlock` without max pool), 4
     `DecoderBlock`s, and 1 dense convolution layer. Output can be optionally zero-padded after the
@@ -373,8 +373,8 @@ class UTimeBackbone(nn.Module):
         return x
 
 
-class UTimeHead(nn.Module):
-    """Head for the UTime architecture.
+class USleepHead(nn.Module):
+    """Head for the USleep architecture.
 
     Comprised of an average pool layer, a convolution layer, and a softmax
     """
@@ -423,34 +423,36 @@ class UTimeHead(nn.Module):
         return x
 
 
-class UTime(nn.Sequential):
-    """Implementation of U-Time in PyTorch using 1D blocks.
+class USleep(nn.Module):
+    """Implementation of USleep in PyTorch using 1D blocks.
 
     Example:
         >>> SAMPLE_SECS = 17.5 * 60
-        >>> SAMPLE_RATE = 100
-        >>> N_CHANNELS = 21
-        >>> model = UTime(
+        >>> SAMPLE_RATE = 128
+        >>> N_CHANNELS = 2
+        >>> BATCH_SIZE = 64
+        >>> model = USleep(
         ...     n_channels=N_CHANNELS,
         ...     n_classes=5,
         ...     backbone_kwargs=dict(complexity_factor=1., zero_pad=True),
         ...     head_kwargs=dict(pool=30 * SAMPLE_RATE),
-        ...     loss_fn=nn.CrossEntropyLoss(),
+        ...     loss_function=nn.CrossEntropyLoss(),
         ...     lr=1e-5,
         ... )
         >>> x = torch.rand(
         ...     BATCH_SIZE,
         ...     N_CHANNELS,
-        ...     SAMPLE_SECS * SAMPLE_RATE,
+        ...     int(SAMPLE_SECS * SAMPLE_RATE),
         ... )
         >>> out = model.forward(x)
+        >>> print(out.shape)
+        torch.Size([12, 5, 35])
     )
 
     For more details, see:
-        * Perslev, M., Jensen, M., Darkner, S., Jennum, P. J., & Igel, C. (2019). U-time: A fully
-          convolutional network for time series segmentation applied to sleep staging. Advances in
-          Neural Information Processing Systems, 32.
-        * https://github.com/perslev/U-Time/tree/utime-paper-version
+        * Perslev, M., Darkner, S., Kempfner, L., Nikolic, M., Jennum, P.J. and Igel, C., 2021.
+          U-Sleep: resilient high-frequency sleep staging. NPJ digital medicine, 4(1), p.72.
+        * https://github.com/perslev/U-Time/tree/usleep-paper-version
     """
 
     def __init__(
@@ -466,44 +468,38 @@ class UTime(nn.Sequential):
         Args:
             n_channels: Number of channels of input data.
             n_classes: Number of classes to generate predictions for.
-            backbone_kwargs: Optional kwargs to apply to the `UTimeBackbone`.
-            head_kwargs: Optional kwargs to apply to the `UTimeHead`.
+            backbone_kwargs: Optional kwargs to apply to the `USleepBackbone`.
+            head_kwargs: Optional kwargs to apply to the `USleepHead`.
             seermodule_kwargs: Arguments to apps through to SeerModule initialiser.
         """
-        super().__init__(**seermodule_kwargs)
-        self.backbone = UTimeBackbone(
+        # super().__init__(**seermodule_kwargs)
+        super().__init__()
+        self.backbone = USleepBackbone(
             n_channels,
             n_classes,
             **(backbone_kwargs or {}),
         )
-        self.head = UTimeHead(
+        self.head = USleepHead(
             n_classes,
             **(head_kwargs or {}),
         )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """A forward pass through the network.
+
+        Args:
+            x: Tensor input for the network.
+
+        Returns:
+            Tensor output from the network.
+        """
+        x = self.backbone(x)
+        x = self.head(x)
+        return x
+
 
 def _log_layer_output(x: torch.Tensor, name: str = "", log_stats: bool = False):
     """Simple logger wrapper to debug layer dimensions"""
     logger.debug(f"{x.shape} {name}")
     if log_stats:
         logger.debug(f"{float(x.mean())}, {float(x.std())} {name}")
-
-
-if logger.level <= logging.DEBUG:
-    SAMPLE_SECS = 17.5 * 60
-    SAMPLE_RATE = 100
-
-    model = UTime(
-        n_channels=21,
-        n_classes=1,
-        backbone_kwargs=dict(complexity_factor=1.0, zero_pad=True),
-    )
-
-    n_timesteps = int(SAMPLE_SECS * SAMPLE_RATE)
-    x = torch.rand(3, 21, n_timesteps)
-    y = torch.rand(3, n_timesteps, 1)
-
-    try:
-        out = model(x)
-    except Exception as err:
-        print(str(err))
-        breakpoint()
