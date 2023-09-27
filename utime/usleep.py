@@ -20,7 +20,7 @@ class ConvBlock(nn.Sequential):
         in_channels: int,
         features: int,
         kernel_size: int,
-        activation: Optional[Callable] = None,
+        activation: Optional[Callable] = nn.ELU(),
         conv_kwargs: Optional[Dict[str, Any]] = None,
         bn_kwargs: Optional[Dict[str, Any]] = None,
     ):
@@ -30,7 +30,8 @@ class ConvBlock(nn.Sequential):
             in_channels: Number of channels in for the convolution layer.
             features: Number of features out for the convolution layer and batch norm.
             kernel_size: Length of kernel for convolution layer.
-            activation: Callable for activation after batch norm (by default `nn.ReLU`).
+            activation: Callable for activation after batch norm (by default `nn.ELU`). Set to
+                `None` to disable.
             conv_kwargs: Optional kwargs for convolution layer.
             bn_kwargs: Optional kwargs for batch norm layer.
         """
@@ -42,7 +43,8 @@ class ConvBlock(nn.Sequential):
             **(conv_kwargs or {}),
         )
         self.norm1 = nn.BatchNorm1d(num_features=features, **(bn_kwargs or {}))
-        self.relu1 = activation or nn.ReLU(inplace=True)
+        if activation is not None:
+            self.activation = activation
 
 
 class EncoderBlock(nn.Module):
@@ -207,6 +209,7 @@ class USleepBackbone(nn.Module):
         complexity_factor: float = 1.0,
         zero_pad: bool = True,
         padding: Optional[str] = "same",
+        activation: Optional[Callable] = nn.Tanh(),
     ):
         """Initialise the backbone.
 
@@ -223,6 +226,8 @@ class USleepBackbone(nn.Module):
                 layer.
             padding: Padding argument for all convolution layers used throughout the encoder and
                 decoder paths (default "same"). Set to `None` to disable.
+            activation: Optioanl activation layer to apply after the final convolution (by default
+                `nn.Tanh()`). Set to `None` to disable.
         """
         super().__init__()
 
@@ -323,15 +328,17 @@ class USleepBackbone(nn.Module):
             ]
         )
 
-        self.dense = nn.Sequential(
+        dense_layers = [
             nn.Conv1d(
                 in_channels=n_filters,
                 out_channels=n_classes,
                 kernel_size=1,
                 padding="same",
             ),
-            nn.Tanh(),
-        )
+        ]
+        if activation is not None:
+            dense_layers.append(activation)
+        self.dense = nn.Sequential(*dense_layers)
 
     def forward(self, x):
         """A forward pass through the network.
