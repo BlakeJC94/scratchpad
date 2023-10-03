@@ -60,8 +60,7 @@ class EncoderBlock(nn.Module):
         features: int,
         kernel_size: int,
         pool: Optional[int] = None,
-        conv1_kwargs=None,
-        conv2_kwargs=None,
+        conv_kwargs: Optional[Dict[str, Any]] = None,
     ):
         """Initialise the block.
 
@@ -71,21 +70,14 @@ class EncoderBlock(nn.Module):
                 for the seconds `ConvBlock`.
             kernel_size: Length of kernels for both ConvBlocks.
             pool: Size of max pool kernel. If unset, max pooling will be disabled.
-            conv1_kwargs: Optional kwargs for convolution layer of first `ConvBlock`.
-            conv2_kwargs: Optional kwargs for convolution layer of second `ConvBlock`.
+            conv_kwargs: Optional kwargs for convolution layer of first `ConvBlock`.
         """
         super().__init__()
-        self.convlayer1 = ConvBlock(
+        self.convlayer = ConvBlock(
             in_channels,
             features,
             kernel_size,
-            conv_kwargs=(conv1_kwargs or {}),
-        )
-        self.convlayer2 = ConvBlock(
-            features,
-            features,
-            kernel_size,
-            conv_kwargs=(conv2_kwargs or {}),
+            conv_kwargs=(conv_kwargs or {}),
         )
         self.pool = nn.MaxPool1d(kernel_size=pool) if pool is not None else None
 
@@ -100,8 +92,7 @@ class EncoderBlock(nn.Module):
             before the MaxPool is applied. If `self.pool` is `None`, only the residual will be
             returned.
         """
-        x = self.convlayer1(x)
-        res = self.convlayer2(x)
+        res = self.convlayer(x)
         if self.pool is None:
             return res
         out = self.pool(res)
@@ -203,10 +194,10 @@ class USleepBackbone(nn.Module):
         self,
         n_channels: int,
         n_classes: int,
-        dilation: int = 2,
-        kernel_size: int = 5,
-        n_features: int = 16,
-        complexity_factor: float = 1.0,
+        dilation: int = 1,
+        kernel_size: int = 9,
+        n_features: int = 5,
+        complexity_factor: float = 1.67,
         zero_pad: bool = True,
         padding: Optional[str] = "same",
         activation: Optional[Callable] = nn.Tanh(),
@@ -240,52 +231,28 @@ class USleepBackbone(nn.Module):
         self.zero_pad = zero_pad
         self.padding = padding
 
-        n_filters = int(self.n_features * sqrt(complexity_factor))
+        depth = 12
 
-        self.encoder = nn.ModuleList(
-            [
+        in_channels = n_channels
+        features = int(self.n_features * sqrt(complexity_factor))
+        encoder_blocks = []
+        for i in range(depth + 1):
+            encoder_blocks.append(
                 EncoderBlock(
-                    in_channels=n_channels,
-                    features=n_filters,
+                    in_channels=in_channels,
+                    features=features,
                     kernel_size=kernel_size,
-                    pool=10,
-                    conv1_kwargs=dict(dilation=dilation, padding="same"),
-                    conv2_kwargs=dict(dilation=dilation, padding="same"),
+                    pool=2 if i < depth - 1 else None,
+                    conv_kwargs=dict(dilation=dilation, padding="same"),
                 ),
-                EncoderBlock(
-                    in_channels=n_filters,
-                    features=n_filters * 2,
-                    kernel_size=kernel_size,
-                    pool=8,
-                    conv1_kwargs=dict(dilation=dilation, padding="same"),
-                    conv2_kwargs=dict(dilation=dilation, padding="same"),
-                ),
-                EncoderBlock(
-                    in_channels=n_filters * 2,
-                    features=n_filters * 4,
-                    kernel_size=kernel_size,
-                    pool=6,
-                    conv1_kwargs=dict(dilation=dilation, padding="same"),
-                    conv2_kwargs=dict(dilation=dilation, padding="same"),
-                ),
-                EncoderBlock(
-                    in_channels=n_filters * 4,
-                    features=n_filters * 8,
-                    kernel_size=kernel_size,
-                    pool=4,
-                    conv1_kwargs=dict(dilation=dilation, padding="same"),
-                    conv2_kwargs=dict(dilation=dilation, padding="same"),
-                ),
-            ]
-        )
+            )
+            in_channels = features
+            features = int(features * sqrt(2))
 
-        self.bottleneck = EncoderBlock(
-            in_channels=n_filters * 8,
-            features=n_filters * 16,
-            kernel_size=kernel_size,
-            conv1_kwargs=dict(dilation=dilation, padding="same"),
-            conv2_kwargs=dict(dilation=dilation, padding="same"),
-        )
+        *encoder_layers, bottleneck = encoder_blocks
+
+        self.encoder = nn.ModuleList(encoder_layers)
+        self.bottleneck = bottleneck
 
         self.decoder = nn.ModuleList(
             [

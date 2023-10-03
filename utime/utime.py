@@ -41,8 +41,8 @@ class ConvBlock(nn.Sequential):
             kernel_size=kernel_size,
             **(conv_kwargs or {}),
         )
-        self.norm1 = nn.BatchNorm1d(num_features=features, **(bn_kwargs or {}))
         self.relu1 = activation or nn.ReLU(inplace=True)
+        self.norm1 = nn.BatchNorm1d(num_features=features, **(bn_kwargs or {}))
 
 
 class EncoderBlock(nn.Module):
