@@ -205,7 +205,7 @@ class UTimeBackbone(nn.Module):
         kernel_size: int = 5,
         n_features: int = 16,
         complexity_factor: float = 1.0,
-        zero_pad: bool = True,
+        zero_pad_output: bool = True,
         padding: Optional[str] = "same",
     ):
         """Initialise the backbone.
@@ -219,7 +219,7 @@ class UTimeBackbone(nn.Module):
             n_features: Number of output features for first `EncoderBlock`. Number of features
                 increases by a factor of 2 on each decent down the encoder path.
             complexity_factor: Increases `n_features` by square root of an optional factor.
-            zero_pad: Whether to zero-pad the decoder output after applying the final convolution
+            zero_pad_output: Whether to zero-pad the decoder output after applying the final convolution
                 layer.
             padding: Padding argument for all convolution layers used throughout the encoder and
                 decoder paths (default "same"). Set to `None` to disable.
@@ -232,94 +232,59 @@ class UTimeBackbone(nn.Module):
         self.dilation = dilation
         self.n_features = n_features
         self.complexity_factor = complexity_factor
-        self.zero_pad = zero_pad
+        self.zero_pad_output = zero_pad_output
         self.padding = padding
 
         n_filters = int(self.n_features * sqrt(complexity_factor))
 
+        (
+            en_filters,
+            (bn_in_channels, bn_features),
+            de_filters,
+        ) = self._get_layer_filters(
+            n_channels,
+            n_features,
+            expansions=[2, 2, 2, 2],
+            complexity_factor=complexity_factor,
+        )
+
+        pools = [10, 8, 6, 4]
+        scales = pools[::-1]
+
         self.encoder = nn.ModuleList(
             [
                 EncoderBlock(
-                    in_channels=n_channels,
-                    features=n_filters,
+                    in_channels=in_channels,
+                    features=features,
                     kernel_size=kernel_size,
-                    pool=10,
-                    conv1_kwargs=dict(dilation=dilation, padding="same"),
-                    conv2_kwargs=dict(dilation=dilation, padding="same"),
-                ),
-                EncoderBlock(
-                    in_channels=n_filters,
-                    features=n_filters * 2,
-                    kernel_size=kernel_size,
-                    pool=8,
-                    conv1_kwargs=dict(dilation=dilation, padding="same"),
-                    conv2_kwargs=dict(dilation=dilation, padding="same"),
-                ),
-                EncoderBlock(
-                    in_channels=n_filters * 2,
-                    features=n_filters * 4,
-                    kernel_size=kernel_size,
-                    pool=6,
-                    conv1_kwargs=dict(dilation=dilation, padding="same"),
-                    conv2_kwargs=dict(dilation=dilation, padding="same"),
-                ),
-                EncoderBlock(
-                    in_channels=n_filters * 4,
-                    features=n_filters * 8,
-                    kernel_size=kernel_size,
-                    pool=4,
-                    conv1_kwargs=dict(dilation=dilation, padding="same"),
-                    conv2_kwargs=dict(dilation=dilation, padding="same"),
-                ),
+                    pool=pool,
+                    conv1_kwargs=dict(dilation=dilation, padding=padding),
+                    conv2_kwargs=dict(dilation=dilation, padding=padding),
+                )
+                for (in_channels, features), pool in zip(en_filters, pools)
             ]
         )
 
         self.bottleneck = EncoderBlock(
-            in_channels=n_filters * 8,
-            features=n_filters * 16,
+            in_channels=bn_in_channels,
+            features=bn_features,
             kernel_size=kernel_size,
-            conv1_kwargs=dict(dilation=dilation, padding="same"),
-            conv2_kwargs=dict(dilation=dilation, padding="same"),
+            conv1_kwargs=dict(dilation=dilation, padding=padding),
+            conv2_kwargs=dict(dilation=dilation, padding=padding),
         )
 
         self.decoder = nn.ModuleList(
             [
                 DecoderBlock(
-                    in_channels=n_filters * 16,
-                    features=n_filters * 8,
+                    in_channels=in_channels,
+                    features=features,
                     kernel_size=kernel_size,
-                    scale=4,
-                    conv1_kwargs=dict(padding="same"),
-                    conv2_kwargs=dict(padding="same"),
-                    conv3_kwargs=dict(padding="same"),
-                ),
-                DecoderBlock(
-                    in_channels=n_filters * 8,
-                    features=n_filters * 4,
-                    kernel_size=kernel_size,
-                    scale=6,
-                    conv1_kwargs=dict(padding="same"),
-                    conv2_kwargs=dict(padding="same"),
-                    conv3_kwargs=dict(padding="same"),
-                ),
-                DecoderBlock(
-                    in_channels=n_filters * 4,
-                    features=n_filters * 2,
-                    kernel_size=kernel_size,
-                    scale=8,
-                    conv1_kwargs=dict(padding="same"),
-                    conv2_kwargs=dict(padding="same"),
-                    conv3_kwargs=dict(padding="same"),
-                ),
-                DecoderBlock(
-                    in_channels=n_filters * 2,
-                    features=n_filters,
-                    kernel_size=kernel_size,
-                    scale=10,
-                    conv1_kwargs=dict(padding="same"),
-                    conv2_kwargs=dict(padding="same"),
-                    conv3_kwargs=dict(padding="same"),
-                ),
+                    scale=scale,
+                    conv1_kwargs=dict(padding=padding),
+                    conv2_kwargs=dict(padding=padding),
+                    conv3_kwargs=dict(padding=padding),
+                )
+                for (in_channels, features), scale in zip(de_filters, scales)
             ]
         )
 
@@ -333,6 +298,25 @@ class UTimeBackbone(nn.Module):
             nn.Tanh(),
         )
 
+    @staticmethod
+    def _get_layer_filters(n_channels=21, n_features=16, expansions=None, complexity_factor=1.0):
+        if expansions is None:
+            expansions = [2, 2, 2, 2]
+
+        fs = [int(n_channels), int(n_features)]
+        for expansion in expansions:
+            fs.append(int(fs[-1] * expansion))
+
+        for i in range(len(fs) - 1):
+            fs[i + 1] = int(fs[i + 1] * sqrt(complexity_factor))
+
+        depth = len(expansions)
+        en_filts = [(fs[i], fs[i + 1]) for i in range(depth)]
+        bn_filts = (fs[-2], fs[-1])
+        de_filts = [(fs[-(i + 1)], fs[-(i + 2)]) for i in range(depth)]
+
+        return en_filts, bn_filts, de_filts
+
     def forward(self, x):
         """A forward pass through the network.
 
@@ -340,7 +324,7 @@ class UTimeBackbone(nn.Module):
             x: Batch of data for network input `(batch_size, n_channels, n_timesteps)`
 
         Returns:
-            Tensor with shape `(batch_size, n_classes, n_timesteps_out)`. If `self.zero_pad = True`,
+            Tensor with shape `(batch_size, n_classes, n_timesteps_out)`. If `self.zero_pad_output = True`,
             then `n_timesteps_out == n_timesteps`.
         """
         _n_batches, _n_channels, n_timesteps = x.shape
@@ -363,7 +347,7 @@ class UTimeBackbone(nn.Module):
         x = self.dense(x)
         _log_layer_output(x, "DENSE")
 
-        if self.zero_pad:
+        if self.zero_pad_output:
             pad_len = n_timesteps - x.shape[-1]
             lpad = pad_len // 2
             rpad = lpad + pad_len % 2
@@ -401,7 +385,8 @@ class UTimeHead(nn.Module):
 
         segment_layers = []
         if pool is not None:
-            segment_layers.append(nn.AvgPool1d(pool))
+            self.pool = int(self.pool)
+            segment_layers.append(nn.AvgPool1d(self.pool))
 
         segment_layers.append(
             nn.Conv1d(
