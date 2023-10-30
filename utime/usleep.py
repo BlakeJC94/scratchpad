@@ -194,11 +194,11 @@ class USleepBackbone(nn.Module):
         self,
         n_channels: int,
         n_classes: int,
-        dilation: int = 1,
-        kernel_size: int = 9,
-        n_features: int = 5,
-        complexity_factor: float = 1.67,
-        zero_pad: bool = True,
+        dilation: int = 2,
+        kernel_size: int = 5,
+        n_features: int = 16,
+        complexity_factor: float = 1.0,
+        zero_pad_output: bool = True,
         padding: Optional[str] = "same",
         activation: Optional[Callable] = nn.Tanh(),
     ):
@@ -228,74 +228,62 @@ class USleepBackbone(nn.Module):
         self.dilation = dilation
         self.n_features = n_features
         self.complexity_factor = complexity_factor
-        self.zero_pad = zero_pad
+        self.zero_pad_output = zero_pad_output
         self.padding = padding
+        self.activation = activation
 
-        depth = 12
+        n_filters = int(self.n_features * sqrt(complexity_factor))
 
-        in_channels = n_channels
-        features = int(self.n_features * sqrt(complexity_factor))
-        encoder_blocks = []
-        for i in range(depth + 1):
-            encoder_blocks.append(
+        (
+            en_filters,
+            (bn_in_channels, bn_features),
+            de_filters,
+        ) = self._get_layer_filters(
+            n_channels,
+            n_features,
+            expansions=[2, 2, 2, 2],
+            complexity_factor=complexity_factor,
+        )
+
+        pools = [10, 8, 6, 4]
+        scales = pools[::-1]
+
+        self.encoder = nn.ModuleList(
+            [
                 EncoderBlock(
                     in_channels=in_channels,
                     features=features,
                     kernel_size=kernel_size,
-                    pool=2 if i < depth - 1 else None,
-                    conv_kwargs=dict(dilation=dilation, padding="same"),
-                ),
-            )
-            in_channels = features
-            features = int(features * sqrt(2))
+                    pool=pool,
+                    conv_kwargs=dict(dilation=dilation, padding=padding),
+                )
+                for (in_channels, features), pool in zip(en_filters, pools)
+            ]
+        )
 
-        *encoder_layers, bottleneck = encoder_blocks
-
-        self.encoder = nn.ModuleList(encoder_layers)
-        self.bottleneck = bottleneck
+        self.bottleneck = EncoderBlock(
+            in_channels=bn_in_channels,
+            features=bn_features,
+            kernel_size=kernel_size,
+            conv_kwargs=dict(dilation=dilation, padding=padding),
+        )
 
         self.decoder = nn.ModuleList(
             [
                 DecoderBlock(
-                    in_channels=n_filters * 16,
-                    features=n_filters * 8,
+                    in_channels=in_channels,
+                    features=features,
                     kernel_size=kernel_size,
-                    scale=4,
-                    conv1_kwargs=dict(padding="same"),
-                    conv2_kwargs=dict(padding="same"),
-                    conv3_kwargs=dict(padding="same"),
-                ),
-                DecoderBlock(
-                    in_channels=n_filters * 8,
-                    features=n_filters * 4,
-                    kernel_size=kernel_size,
-                    scale=6,
-                    conv1_kwargs=dict(padding="same"),
-                    conv2_kwargs=dict(padding="same"),
-                    conv3_kwargs=dict(padding="same"),
-                ),
-                DecoderBlock(
-                    in_channels=n_filters * 4,
-                    features=n_filters * 2,
-                    kernel_size=kernel_size,
-                    scale=8,
-                    conv1_kwargs=dict(padding="same"),
-                    conv2_kwargs=dict(padding="same"),
-                    conv3_kwargs=dict(padding="same"),
-                ),
-                DecoderBlock(
-                    in_channels=n_filters * 2,
-                    features=n_filters,
-                    kernel_size=kernel_size,
-                    scale=10,
-                    conv1_kwargs=dict(padding="same"),
-                    conv2_kwargs=dict(padding="same"),
-                    conv3_kwargs=dict(padding="same"),
-                ),
+                    scale=scale,
+                    conv1_kwargs=dict(padding=padding),
+                    conv2_kwargs=dict(padding=padding),
+                    conv3_kwargs=dict(padding=padding),
+                )
+                for (in_channels, features), scale in zip(de_filters, scales)
             ]
         )
 
-        dense_layers = [
+        dense = [
             nn.Conv1d(
                 in_channels=n_filters,
                 out_channels=n_classes,
@@ -303,9 +291,28 @@ class USleepBackbone(nn.Module):
                 padding="same",
             ),
         ]
-        if activation is not None:
-            dense_layers.append(activation)
-        self.dense = nn.Sequential(*dense_layers)
+        if self.activation is not None:
+            dense.append(self.activation)
+        self.dense = nn.Sequential(*dense)
+
+    @staticmethod
+    def _get_layer_filters(n_channels=21, n_features=16, expansions=None, complexity_factor=1.0):
+        if expansions is None:
+            expansions = [2, 2, 2, 2]
+
+        fs = [int(n_channels), int(n_features)]
+        for expansion in expansions:
+            fs.append(int(fs[-1] * expansion))
+
+        for i in range(len(fs) - 1):
+            fs[i + 1] = int(fs[i + 1] * sqrt(complexity_factor))
+
+        depth = len(expansions)
+        en_filts = [(fs[i], fs[i + 1]) for i in range(depth)]
+        bn_filts = (fs[-2], fs[-1])
+        de_filts = [(fs[-(i + 1)], fs[-(i + 2)]) for i in range(depth)]
+
+        return en_filts, bn_filts, de_filts
 
     def forward(self, x):
         """A forward pass through the network.
@@ -477,3 +484,23 @@ def _log_layer_output(x: torch.Tensor, name: str = "", log_stats: bool = False):
     logger.debug(f"{x.shape} {name}")
     if log_stats:
         logger.debug(f"{float(x.mean())}, {float(x.std())} {name}")
+
+if logger.level <= logging.DEBUG:
+    SAMPLE_SECS = 17.5 * 60
+    SAMPLE_RATE = 100
+
+    model = USleep(
+        n_channels=21,
+        n_classes=1,
+        backbone_kwargs=dict(complexity_factor=1.0, zero_pad=True),
+    )
+
+    n_timesteps = int(SAMPLE_SECS * SAMPLE_RATE)
+    x = torch.rand(3, 21, n_timesteps)
+    y = torch.rand(3, n_timesteps, 1)
+
+    try:
+        out = model(x)
+    except Exception as err:
+        print(str(err))
+        breakpoint()
