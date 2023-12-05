@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import os
 import logging
-import pexpect
 import platform
 import shlex
 import shutil
@@ -32,6 +31,11 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Optional
+
+try:
+    import pexpect
+except ImportError:
+    pexpect = None
 
 VERSION = "1.0.0"
 
@@ -90,6 +94,10 @@ class Shell:
         if sys.platform == "win32":
             raise NotImplementedError("Not implemented for Windows platforms.")
 
+        # c = subprocess.run(
+        #     args=[self._path, "-i"],
+        #     env=os.environ | {'ENVY': 'true'},
+        # )
         terminal = shutil.get_terminal_size()
         c = pexpect.spawn(
             self._path,
@@ -113,11 +121,11 @@ class Shell:
                 cmd += "\r"
             c.sendline(cmd)
 
-        def resize(sig: Any, data: Any) -> None:
-            terminal = shutil.get_terminal_size()
-            c.setwinsize(terminal.lines, terminal.columns)
+        # def resize(sig: Any, data: Any) -> None:
+        #     terminal = shutil.get_terminal_size()
+        #     c.setwinsize(terminal.lines, terminal.columns)
 
-        signal.signal(signal.SIGWINCH, resize)
+        # signal.signal(signal.SIGWINCH, resize)
 
         # Interact with the new shell.
         c.interact(escape_character=None)
@@ -168,6 +176,7 @@ def parse_cli() -> argparse.Namespace:
         "name",
         help="Optional name of virtual environment to use (default: `.venv`).",
         type=str,
+        nargs="?",
         default=".venv",
     )
     parser.add_argument(
@@ -197,6 +206,7 @@ def is_venv_dir(path: Path, venv_name: str) -> bool:
 def search_dirs_up(cwd: Path, venv_name: str) -> Optional[Path]:
     home = Path.home()
     for p in cwd.parents:
+        logger.debug(f"Searching '{str(p)}'.")
         if p <= home:
             logger.debug(f"Selected path {str(p)} is in `home`, exiting search.")
             return None
@@ -208,12 +218,20 @@ def search_dirs_up(cwd: Path, venv_name: str) -> Optional[Path]:
 
     return None
 
+def check_deps():
+    if pexpect is None:
+        raise ImportError(
+            "Module `pexpect` not found. Try install module before running again "
+            f"(`$ pip install pexpect`) "
+        )
+
 def check_python_version():
-    major, minor, *_ = platform.python_verison().split('.')
+    major, minor, *_ = version = platform.python_version_tuple()
     if int(major) <= 2 or int(minor) <= 5:
         raise EnvironmentError("Envy requires at least Python 3.5")
 
 def main():
+    check_deps()
     check_python_version()
     args = parse_cli()
 
@@ -250,7 +268,10 @@ def main():
 
 if __name__ == "__main__":
     try:
+        logger.info("Executing")
         main()
-    except:
+    except Exception as err:
+        logger.error(f"Error: {str(err)}")
         sys.exit(1)
+    logger.info("Execution okay!")
     sys.exit(0)
