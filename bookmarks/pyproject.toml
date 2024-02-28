@@ -1,12 +1,12 @@
 [tool.poetry]
-name = "bookmarks"
-version = "0.1.0"
+name = "foxtail"
+version = "1.0.0"
 description = ""
 authors = ["BlakeJC94 <blakejamescook@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.10"
 
 
 [build-system]
