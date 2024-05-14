@@ -80,6 +80,7 @@ def get_query(**kwargs: dict[str, Any]) -> Query:
 
 
 def split_query(query: Query) -> list[Query]:
+    orderby = query.orderby
     starttime = query.starttime
     starttime = (
         datetime.fromisoformat(starttime)
@@ -103,4 +104,7 @@ def split_query(query: Query) -> list[Query]:
         ).isoformat()
         sub_queries.append(sub_query)
 
-    return sub_queries[::-1]
+    if orderby == "time":
+        sub_queries = sub_queries[::-1]
+
+    return sub_queries

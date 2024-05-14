@@ -13,6 +13,7 @@ from quakerv2.globals import (
     RESPONSE_NOT_FOUND,
 )
 from quakerv2.query import Query, get_query, split_query
+from quakerv2.file import get_file, join_files
 
 
 class Client:
@@ -46,6 +47,9 @@ class Client:
         raise ConnectionAbortedError("Connection could not be established")
 
     def _execute_mt(self, query: Query) -> str:
+        fmt = query.format
+        orderby = query.orderby
+
         sub_queries = split_query(query)
 
         results = ["" for _ in range(len(sub_queries))]
@@ -57,17 +61,17 @@ class Client:
             for future in cf.as_completed(future_to_idx):
                 idx = future_to_idx[future]
                 try:
-                    data = future.result()
+                    results[idx] = get_file(fmt, future.result())
                 except Exception as exc:
                     self.logger.error(f"{idx} generated an exception: {exc}")
+                    breakpoint()
                     continue
 
-                if idx != 0:
-                    data = "\n".join(data.split("\n")[1:])
-
-                results[idx] = data
-
-        return "\n".join(results)
+        result = join_files(results)
+        if orderby in ["magnitude", "magnitude-asc"]:
+            return result.sorted_content(orderby)
+        else:
+            return result.content
 
     def _check_download_error(self, response):
         if response.ok:

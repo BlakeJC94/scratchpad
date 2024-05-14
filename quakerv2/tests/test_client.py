@@ -51,10 +51,12 @@ def check_valid_csv(result: str, query_fields: dict[str, Any]):
 def test_client(query_fields):
     client = Client()
     out = client.execute(**query_fields)
+    assert len(out.split("\n")) <= 20000
     check_valid_csv(out, query_fields)
 
 
 def test_client_mt(query_fields_large):
     client = Client()
     out = client.execute(**query_fields_large)
+    assert len(out.split("\n")) > 20000
     check_valid_csv(out, query_fields_large)
