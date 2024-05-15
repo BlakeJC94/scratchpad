@@ -1,39 +1,25 @@
 from argparse import ArgumentParser
+from dataclasses import fields
 
 from quakerv2.client import Client
+from quakerv2.query import Query
 
 
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument("argfile", nargs="?")
 
-    parser.add_argument("--endtime", default=None)
-    parser.add_argument("--starttime", default=None)
-    parser.add_argument("--updatedafter", default=None)
-
-    parser.add_argument("--mindepth", default=None)
-    parser.add_argument("--maxdepth", default=None)
-    parser.add_argument("--minmagnitude", default=None)
-    parser.add_argument("--maxmagnitude", default=None)
-
-    parser.add_argument("--minlatitude", default=None)
-    parser.add_argument("--maxlatitude", default=None)
-    parser.add_argument("--minlongitude", default=None)
-    parser.add_argument("--maxlongitude", default=None)
-
-    parser.add_argument("--latitude", default=None)
-    parser.add_argument("--longitude", default=None)
-    parser.add_argument("--maxradius", default=None)
-    parser.add_argument("--maxradiuskm", default=None)
-
+    for field in fields(Query):
+        parser.add_argument(f"--{field.name}", type=field.type, default=None)
     return parser.parse_args()
+
 
 def main():
     args = vars(parse_args())
 
     if (args_file := args.pop("args_file", None)) is not None:
-        with open(args_file, 'r') as f:
-            args = {}
+        args = {}
+        with open(args_file, "r") as f:
             for line in f.readlines():
                 k, v = line.split(":", 1)
                 k, v = k.strip(), v.strip()
@@ -45,6 +31,7 @@ def main():
     result = client.execute(**args)
 
     print(result)
+
 
 if __name__ == "__main__":
     main()

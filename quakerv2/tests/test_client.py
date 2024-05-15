@@ -1,8 +1,8 @@
 import io
-from dateutil.parser import isoparse
 from typing import Any
 
 import pandas as pd
+from dateutil.parser import isoparse
 
 from quakerv2.client import Client
 
@@ -40,15 +40,15 @@ def check_valid_csv(result: str, query_fields: dict[str, Any]):
     assert len(result) > 0
 
     # Check non-empty result
-    assert result['time'].dtype == "object"
-    assert result['mag'].dtype == "float64"
+    assert result["time"].dtype == "object"
+    assert result["mag"].dtype == "float64"
 
     # Check all times lie within requested time span
     dt_col = pd.to_datetime(result["time"])
     assert (dt_col.dt.to_pydatetime() <= isoparse(query_fields["endtime"] + "Z")).all()
     assert (isoparse(query_fields["starttime"] + "Z") <= dt_col.dt.to_pydatetime()).all()
 
-    orderby = query_fields.get('orderby', "time")
+    orderby = query_fields.get("orderby", "time")
     if orderby == "time":
         assert (dt_col.sort_values(ascending=False) == dt_col).all()
     elif orderby == "time-asc":
@@ -68,7 +68,7 @@ def test_client(query_fields):
     check_valid_csv(out, query_fields)
 
 
-def test_client_mt(query_fields_large):
+def test_client_paginated(query_fields_large):
     client = Client()
     out = client.execute(**query_fields_large)
     assert len(out.split("\n")) > 20000

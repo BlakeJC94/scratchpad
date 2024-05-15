@@ -1,9 +1,10 @@
-import random
 import logging
+import random
 from time import sleep
 
 from requests.sessions import Session
 
+from quakerv2.file import get_file, join_files
 from quakerv2.globals import (
     BASE_URL,
     MAX_ATTEMPTS,
@@ -11,8 +12,7 @@ from quakerv2.globals import (
     RESPONSE_BAD_REQUEST,
     RESPONSE_NOT_FOUND,
 )
-from quakerv2.query import Query, get_query
-from quakerv2.file import get_file, join_files
+from quakerv2.query import Query
 
 
 class Client:
@@ -23,11 +23,12 @@ class Client:
         self.logger = logging.getLogger(__name__)
 
     def execute(self, **kwargs):
-        query = get_query(**kwargs)
+        query = Query(**kwargs)
         return self._execute_sq(query)
 
     def _execute_sq(self, query: Query) -> str:
         query.limit = 20000
+        query.offset = 1
 
         pages = []
         fetch_next_page = True

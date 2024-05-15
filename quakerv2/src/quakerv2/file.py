@@ -25,8 +25,10 @@ class CsvFile(File):
     def footer(self):
         return []
 
+
 class TextFile(CsvFile):
     pass
+
 
 class GeojsonFile(File):
     def header(self):
@@ -45,10 +47,40 @@ class GeojsonFile(File):
             "]".join(lines[-1].split("]")[:2]).removesuffix(","),
         ]
 
+
+class KmlFile(File):
+    def header(self):
+        return self.content.split("\n")[:13]
+
+    def records(self):
+        return self.content.split("\n")[13:-3]
+
+    def footer(self):
+        return self.content.split("\n")[-3:]
+
+
+class XmlFile(File):
+    def header(self):
+        return self.content.split("\n")[:3]
+
+    def records(self):
+        return self.content.split("\n")[3:-2]
+
+    def footer(self):
+        return self.content.split("\n")[-2:]
+
+
+class QuakemlFile(XmlFile):
+    pass
+
+
 FILE_FMTS = {
     "csv": CsvFile,
     "text": TextFile,
     "geojson": GeojsonFile,
+    "kml": KmlFile,
+    "xml": XmlFile,
+    "quakeml": QuakemlFile,
     None: GeojsonFile,
 }
 
@@ -66,6 +98,7 @@ def join_files(files: list[File]) -> File:
         files[-1].footer(),
     )
     return file_fmt(content)
+
 
 def concat_header_records_footer(header: list[str], records: list[str], footer: list[str]):
     return "\n".join(header + records + footer)
