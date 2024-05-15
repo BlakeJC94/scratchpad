@@ -4,12 +4,12 @@ from datetime import datetime, timedelta
 from math import ceil
 from typing import Any
 
-from quakerv2.globals import SEGMENT_SECS
 from quakerv2.utils import check_time_field_is_valid
 
 
 @dataclass
 class Query:
+    format: str = field(default=None)
     endtime: str = field(default=None)
     starttime: str = field(default=None)
     updatedafter: str = field(default=None)
@@ -17,16 +17,19 @@ class Query:
     mindepth: float = field(default=None)
     maxmagnitude: float = field(default=None)
     minmagnitude: float = field(default=None)
+    orderby: str = field(default=None)
 
     def __post_init__(self):
-        self.orderby = "time"
-        self.format = "csv"
         self.validate()
 
     def validate(self):
         for time_field in ["starttime", "endtime", "updatedafter"]:
             if (time := getattr(self, time_field)) is not None:
                 check_time_field_is_valid(time)
+        if not any(v == self.orderby for v in [None, "time", "time-asc", "magnitude", "magnitude-asc"]):
+            raise ValueError(f"Invalid orderby value: '{self.orderby}'.")
+        if not any(v == self.format for v in [None, "csv", "text", "geojson"]):
+            raise ValueError(f"Invalid format value: '{self.format}'.")
 
     def copy(self):
         return copy(self)
@@ -77,34 +80,3 @@ def get_query(**kwargs: dict[str, Any]) -> Query:
         return QueryCircle(**kwargs)
 
     return Query(**kwargs)
-
-
-def split_query(query: Query) -> list[Query]:
-    orderby = query.orderby
-    starttime = query.starttime
-    starttime = (
-        datetime.fromisoformat(starttime)
-        if starttime is not None
-        else datetime.now() - timedelta(days=30)
-    )
-
-    endtime = query.endtime
-    endtime = datetime.fromisoformat(endtime) if starttime is not None else datetime.now()
-
-    n_segments = ceil((endtime - starttime).total_seconds() / SEGMENT_SECS)
-
-    sub_queries = []
-    for i in range(n_segments):
-        sub_query = query.copy()
-        sub_query.starttime = max(
-            starttime, starttime + i * timedelta(seconds=SEGMENT_SECS)
-        ).isoformat()
-        sub_query.endtime = min(
-            endtime, starttime + (i + 1) * timedelta(seconds=SEGMENT_SECS)
-        ).isoformat()
-        sub_queries.append(sub_query)
-
-    if orderby == "time":
-        sub_queries = sub_queries[::-1]
-
-    return sub_queries

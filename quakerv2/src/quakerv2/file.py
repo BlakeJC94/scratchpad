@@ -1,27 +1,18 @@
 import abc
-from datetime import datetime
 
 
 class File(abc.ABC):
     def __init__(self, content: str):
         self.content = content.strip()
 
-    def sorted_content(self, orderby: str) -> str:
-        keys_records = [(self.sort_key(r, orderby), r) for r in self.records()]
-        records = [r[1] for r in sorted(keys_records, key=lambda x: x[0])]
-        return concat_header_records_footer(self.header(), records, self.footer())
-
-    def sort_key(record: str, orderby: str) -> datetime | float:
-        pass
-
     def header(self) -> list[str]:
-        return [""]
+        return []
 
     def records(self) -> list[str]:
-        return [""]
+        return []
 
     def footer(self) -> list[str]:
-        return [""]
+        return []
 
 
 class CsvFile(File):
@@ -32,29 +23,33 @@ class CsvFile(File):
         return self.content.split("\n")[1:]
 
     def footer(self):
-        return [""]
-
-    def sort_key(record: str, orderby: str) -> datetime | float:
-        values = record.split(',')
-        if orderby.startswith("time"):
-            key = datetime.fromisoformat(values[0].removesuffix("Z"))
-        else:
-            key = float(record.split(",")[4])
-        return key
+        return []
 
 class TextFile(CsvFile):
-    def sort_key(record: str, orderby: str) -> datetime | float:
-        values = record.split('|')
-        if orderby.startswith("time"):
-            key = datetime.fromisoformat(values[1].removesuffix("Z"))
-        else:
-            key = float(record.split(",")[10])
-        return key
+    pass
 
+class GeojsonFile(File):
+    def header(self):
+        lines = self.content.split("\n")
+        return [lines[0].split("[", 1)[0] + "["]
+
+    def footer(self):
+        lines = self.content.split("\n")
+        return ["]" + "]".join(lines[-1].split("]")[2:]).removesuffix(",")]
+
+    def records(self):
+        lines = self.content.split("\n")
+        return [
+            lines[0].split("[", 1)[1],
+            *[l for l in lines[1:-1]],
+            "]".join(lines[-1].split("]")[:2]).removesuffix(","),
+        ]
 
 FILE_FMTS = {
     "csv": CsvFile,
     "text": TextFile,
+    "geojson": GeojsonFile,
+    None: GeojsonFile,
 }
 
 

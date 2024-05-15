@@ -1,4 +1,3 @@
-import concurrent.futures as cf
 import random
 import logging
 from time import sleep
@@ -12,7 +11,7 @@ from quakerv2.globals import (
     RESPONSE_BAD_REQUEST,
     RESPONSE_NOT_FOUND,
 )
-from quakerv2.query import Query, get_query, split_query
+from quakerv2.query import Query, get_query
 from quakerv2.file import get_file, join_files
 
 
@@ -25,11 +24,22 @@ class Client:
 
     def execute(self, **kwargs):
         query = get_query(**kwargs)
-        try:
-            result = self._execute(query)
-        except RuntimeError:
-            result = self._execute_mt(query)
-        return result
+        return self._execute_sq(query)
+
+    def _execute_sq(self, query: Query) -> str:
+        query.limit = 20000
+
+        pages = []
+        fetch_next_page = True
+        while fetch_next_page:
+            page = get_file(query.format, self._execute(query))
+            pages.append(page)
+            if len(page.records()) <= 20000:
+                fetch_next_page = False
+            else:
+                query.offset += 20000
+
+        return join_files(pages).content
 
     def _execute(self, query: Query) -> str:
         with self.session as session:
@@ -43,35 +53,7 @@ class Client:
 
                 self.logger.warning(f"No connection could be made, retrying ({idx}).")
 
-
         raise ConnectionAbortedError("Connection could not be established")
-
-    def _execute_mt(self, query: Query) -> str:
-        fmt = query.format
-        orderby = query.orderby
-
-        sub_queries = split_query(query)
-
-        results = ["" for _ in range(len(sub_queries))]
-        with cf.ThreadPoolExecutor(max_workers=self.num_workers) as pool:
-            future_to_idx = {
-                pool.submit(self._execute, sub_query): i for i, sub_query in enumerate(sub_queries)
-            }
-
-            for future in cf.as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                try:
-                    results[idx] = get_file(fmt, future.result())
-                except Exception as exc:
-                    self.logger.error(f"{idx} generated an exception: {exc}")
-                    breakpoint()
-                    continue
-
-        result = join_files(results)
-        if orderby in ["magnitude", "magnitude-asc"]:
-            return result.sorted_content(orderby)
-        else:
-            return result.content
 
     def _check_download_error(self, response):
         if response.ok:

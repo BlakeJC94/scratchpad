@@ -19,6 +19,7 @@ def date3():
 @fixture
 def query_fields(date2, date3):
     return {
+        "format": "csv",
         "endtime": date3,
         "starttime": date2,
     }
@@ -26,6 +27,7 @@ def query_fields(date2, date3):
 @fixture
 def query_fields_large(date1, date3):
     return {
+        "format": "csv",
         "endtime": date3,
         "starttime": date1,
     }

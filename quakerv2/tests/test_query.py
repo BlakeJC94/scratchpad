@@ -1,8 +1,4 @@
-from math import ceil
-from datetime import datetime
-
-from quakerv2.globals import SEGMENT_SECS
-from quakerv2.query import Query, QueryCircle, QueryRectangle, get_query, split_query
+from quakerv2.query import Query, QueryCircle, QueryRectangle, get_query
 
 
 def test_query(query_fields, date1):
@@ -43,15 +39,3 @@ def test_query_circle(query_fields_circle):
 
     result = query.dict()
     assert result == {**query_fields_circle, "format": "csv", "orderby": "time"}
-
-
-def test_split_query(query_fields_large):
-    query = Query(**query_fields_large)
-    sub_queries = split_query(query)
-
-    assert all(isinstance(q, Query) for q in sub_queries)
-    assert sub_queries[-1].starttime == query.starttime
-    assert sub_queries[0].endtime == query.endtime
-    assert len(sub_queries) == ceil(
-        (datetime.fromisoformat(query.endtime) - datetime.fromisoformat(query.starttime)).total_seconds() / SEGMENT_SECS
-    )
