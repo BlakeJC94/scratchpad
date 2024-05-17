@@ -17,13 +17,14 @@ database = databases[0]
 if (n_databases := len(databases)) > 1:
     warn(f"Found {n_databases} `places.sqlite` files, using {str(database)}.")
 
-database_cp = Path("/tmp/bkmk/foo.sqlite")  # Seems like file is locked, just copy it lol
-database_cp.parent.mkdir(parents=True, exist_ok=True)
-shutil.copy(database, database_cp)
 
 con = sql.connect(database_cp)
 
 # %% Connect to database (simple copy)
+
+database_cp = Path("/tmp/bkmk/foo.sqlite")  # Seems like file is locked, just copy it lol
+database_cp.parent.mkdir(parents=True, exist_ok=True)
+shutil.copy(database, database_cp)
 
 database = Path("~/foo.sqlite").expanduser()
 con = sql.connect(database)
@@ -154,7 +155,7 @@ print("---")
 
 # %% How about id? Pretty sure this is a local table id key though
 
-q1 = "SELECT id FROM moz_bookmarks"
+q1 = "SELECT fk FROM moz_bookmarks"
 res1 = cursor.execute(q1).fetchall()
 res1 = {r[0] for r in res1}
 
