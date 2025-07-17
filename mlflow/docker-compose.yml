@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: mlflow
+      POSTGRES_DB: mlflow
+    ports:
+      - "5432:5432"
+
+  mlflow:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      MLFLOW_BACKEND_STORE_URI: postgresql://mlflow:mlflow@db:5432/mlflow
+    volumes:
+      - ./mlruns:/app/artifacts
+    depends_on:
+      - db

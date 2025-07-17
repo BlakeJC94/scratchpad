@@ -1,0 +1,31 @@
+diff --git a/pandas_reporting.py b/polars_reporting.py
+index 3abe6c3..20ddb86 100644
+--- a/pandas_reporting.py
++++ b/polars_reporting.py
+@@ -1,5 +1,4 @@
+-
+-import pandas as pd
++import polars as pl
+ 
+ from clearml import Task, Logger
+ 
+@@ -14,16 +13,15 @@ def report_table(logger, iteration=0):
+     # report tables
+ 
+     # Report table - DataFrame with index
+-    df = pd.DataFrame(
++    df = pl.DataFrame(
+         {
++            "id": ["falcon", "dog", "spider", "fish"],
+             "num_legs": [2, 4, 8, 0],
+             "num_wings": [2, 0, 0, 0],
+             "num_specimen_seen": [10, 2, 1, 8],
+         },
+-        index=["falcon", "dog", "spider", "fish"],
+     )
+-    df.index.name = "id"
+-    logger.report_table("table pd", "PD with index", iteration=iteration, table_plot=df)
++    logger.report_table("table pl", "PL with index", iteration=iteration, table_plot=df)
+ 
+     # Report table - CSV from path
+     csv_url = "https://raw.githubusercontent.com/plotly/datasets/master/Mining-BTC-180.csv"
